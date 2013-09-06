@@ -44,7 +44,7 @@ type OutboundConn interface {
 	Status() (uint, error)
 	// Send a message
 	Send(message *Message) error
-	// Calls a command or method on Flash Media Server 
+	// Calls a command or method on Flash Media Server
 	// or on an application server running Flash Remoting.
 	Call(customParameters ...interface{}) (err error)
 	// Get network connect instance
@@ -103,7 +103,7 @@ func Dial(url string, handler OutboundConnHandler, maxChannelNumber int) (Outbou
 		obConn.conn = NewConn(c, br, bw, obConn, maxChannelNumber)
 		return obConn, nil
 	}
-
+	//test
 	return nil, err
 }
 
@@ -370,7 +370,7 @@ func (obConn *outboundConn) Send(message *Message) error {
 	return obConn.conn.Send(message)
 }
 
-// Calls a command or method on Flash Media Server 
+// Calls a command or method on Flash Media Server
 // or on an application server running Flash Remoting.
 func (obConn *outboundConn) Call(customParameters ...interface{}) (err error) {
 	return errors.New("Unimplemented")
