@@ -103,7 +103,7 @@ func Dial(url string, handler OutboundConnHandler, maxChannelNumber int) (Outbou
 		obConn.conn = NewConn(c, br, bw, obConn, maxChannelNumber)
 		return obConn, nil
 	}
-	//test
+	//revert
 	return nil, err
 }
 
