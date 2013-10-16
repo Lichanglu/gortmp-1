@@ -5,6 +5,7 @@ package rtmp
 import (
 	"bufio"
 	"bytes"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"github.com/zhangpeihao/goamf"
@@ -34,6 +35,7 @@ type OutboundConnHandler interface {
 type OutboundConn interface {
 	// Connect an appliction on FMS after handshake.
 	Connect(extendedParameters ...interface{}) (err error)
+	LeagueConnect(app, swfURL, tcUrl, pageUrl string) (err error)
 	// Create a stream
 	CreateStream() (err error)
 	// Close a connection
@@ -72,17 +74,27 @@ func Dial(url string, handler OutboundConnHandler, maxChannelNumber int) (Outbou
 	if err != nil {
 		return nil, err
 	}
-	if rtmpURL.protocol != "rtmp" {
+	var c net.Conn
+	if rtmpURL.protocol == "rtmp" {
+		c, err = net.Dial("tcp", fmt.Sprintf("%s:%d", rtmpURL.host, rtmpURL.port))
+	} else if rtmpURL.protocol == "rtmps" {
+		c, err = tls.Dial("tcp", fmt.Sprintf("%s:%d", rtmpURL.host, rtmpURL.port), nil)
+	} else {
 		return nil, errors.New(fmt.Sprintf("Unsupport protocol %s", rtmpURL.protocol))
 	}
-	c, err := net.Dial("tcp", fmt.Sprintf("%s:%d", rtmpURL.host, rtmpURL.port))
+
 	if err != nil {
 		return nil, err
 	}
 
 	ipConn, ok := c.(*net.TCPConn)
+
 	if ok {
+		fmt.Println("ok")
 		ipConn.SetWriteBuffer(128 * 1024)
+	} else {
+		fmt.Println("notok")
+		fmt.Println(c.LocalAddr().String())
 	}
 	br := bufio.NewReader(c)
 	bw := bufio.NewWriter(c)
@@ -90,7 +102,8 @@ func Dial(url string, handler OutboundConnHandler, maxChannelNumber int) (Outbou
 	err = Handshake(c, br, bw, timeout)
 	//err = HandshakeSample(c, br, bw, timeout)
 	if err == nil {
-		logger.ModulePrintln(logHandler, log.LOG_LEVEL_DEBUG, "Handshake OK")
+		fmt.Println("No Error Handshake")
+		//logger.ModulePrintln(logHandler, log.LOG_LEVEL_DEBUG, "Handshake OK")
 
 		obConn := &outboundConn{
 			url:          url,
@@ -146,6 +159,7 @@ func (obConn *outboundConn) Connect(extendedParameters ...interface{}) (err erro
 			}
 		}
 	}()
+	fmt.Println("**sfsfs*********")
 	// Create connect command
 	buf := new(bytes.Buffer)
 	// Command name
@@ -162,7 +176,9 @@ func (obConn *outboundConn) Connect(extendedParameters ...interface{}) (err erro
 	CheckError(err, "Connect() Write app name")
 	_, err = amf.WriteString(buf, obConn.rtmpURL.App())
 	CheckError(err, "Connect() Write app value")
-
+	fmt.Println("Help")
+	fmt.Println(obConn.rtmpURL.App())
+	fmt.Println("WUUUUUUUUT")
 	_, err = amf.WriteObjectName(buf, "flashVer")
 	CheckError(err, "Connect() Write flashver name")
 	_, err = amf.WriteString(buf, FLASH_PLAYER_VERSION_STRING)
@@ -232,6 +248,205 @@ func (obConn *outboundConn) Connect(extendedParameters ...interface{}) (err erro
 	return obConn.conn.Send(connectMessage)
 }
 
+func (obConn *outboundConn) LeagueConnect(app, swfURL, tcUrl, pageUrl string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = r.(error)
+			if obConn.err == nil {
+				obConn.err = err
+			}
+		}
+	}()
+	fmt.Println("*****************************")
+	// Create connect command
+	buf := new(bytes.Buffer)
+	// Command name
+	_, err = amf.WriteString(buf, "connect")
+	CheckError(err, "Connect() Write name: connect")
+	transactionID := obConn.conn.NewTransactionID()
+	obConn.transactions[transactionID] = "connect"
+	_, err = amf.WriteDouble(buf, float64(transactionID))
+	CheckError(err, "Connect() Write transaction ID")
+	_, err = amf.WriteObjectMarker(buf)
+	CheckError(err, "Connect() Write object marker")
+
+	_, err = amf.WriteObjectName(buf, "app")
+	CheckError(err, "Connect() Write app name")
+	_, err = amf.WriteString(buf, app)
+	CheckError(err, "Connect() Write app value")
+
+	_, err = amf.WriteObjectName(buf, "flashVer")
+	CheckError(err, "Connect() Write flashver name")
+	_, err = amf.WriteString(buf, "WIN 10,1,85,3")
+	CheckError(err, "Connect() Write flashver value")
+
+	_, err = amf.WriteObjectName(buf, "swfUrl")
+	CheckError(err, "Connect() Write swfUrl name")
+	_, err = amf.WriteString(buf, swfURL)
+	CheckError(err, "Connect() Write swfUrl value")
+
+	_, err = amf.WriteObjectName(buf, "tcUrl")
+	CheckError(err, "Connect() Write tcUrl name")
+	_, err = amf.WriteString(buf, tcUrl)
+	CheckError(err, "Connect() Write tcUrl value")
+
+	_, err = amf.WriteObjectName(buf, "fpad")
+	CheckError(err, "Connect() Write fpad name")
+	_, err = amf.WriteBoolean(buf, false)
+	CheckError(err, "Connect() Write fpad value")
+
+	_, err = amf.WriteObjectName(buf, "capabilities")
+	CheckError(err, "Connect() Write capabilities name")
+	_, err = amf.WriteDouble(buf, 239)
+	CheckError(err, "Connect() Write capabilities value")
+
+	_, err = amf.WriteObjectName(buf, "audioCodecs")
+	CheckError(err, "Connect() Write audioCodecs name")
+	_, err = amf.WriteDouble(buf, 3191)
+	CheckError(err, "Connect() Write audioCodecs value")
+
+	_, err = amf.WriteObjectName(buf, "videoCodecs")
+	CheckError(err, "Connect() Write videoCodecs name")
+	_, err = amf.WriteDouble(buf, 252)
+	CheckError(err, "Connect() Write videoCodecs value")
+
+	_, err = amf.WriteObjectName(buf, "videoFunction")
+	CheckError(err, "Connect() Write videoFunction name")
+	_, err = amf.WriteDouble(buf, float64(1))
+	CheckError(err, "Connect() Write videoFunction value")
+
+	_, err = amf.WriteObjectName(buf, "pageUrl")
+	CheckError(err, "Connect() Write pageUrl name")
+	_, err = amf.WriteString(buf, pageUrl)
+	CheckError(err, "Connect() Write pageUrl value")
+
+	_, err = amf.WriteObjectName(buf, "objectEncoding")
+	CheckError(err, "Connect() Write objectEncoding name")
+	_, err = amf.WriteDouble(buf, float64(amf.AMF3))
+	CheckError(err, "Connect() Write objectEncoding value")
+
+	_, err = amf.WriteObjectEndMarker(buf)
+	CheckError(err, "Connect() Write ObjectEndMarker")
+
+	// extended parameters
+
+	connectMessage := &Message{
+		ChunkStreamID: CS_ID_COMMAND,
+		Type:          COMMAND_AMF0,
+		Size:          uint32(buf.Len()),
+		Buf:           buf,
+	}
+
+	connectMessage.Dump("connect")
+	obConn.status = OUTBOUND_CONN_STATUS_CONNECT
+	return obConn.conn.Send(connectMessage)
+}
+
+func (obConn *outboundConn) LeagueConnectCommand(app, swfURL, tcUrl, pageUrl string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = r.(error)
+			if obConn.err == nil {
+				obConn.err = err
+			}
+		}
+	}()
+
+	fmt.Println("*****************************")
+	// Create connect command
+	buf := new(bytes.Buffer)
+	// Command name
+	_, err = amf.WriteString(buf, "connect")
+	CheckError(err, "Connect() Write name: connect")
+	transactionID := obConn.conn.NewTransactionID()
+	obConn.transactions[transactionID] = "connect"
+	_, err = amf.WriteDouble(buf, float64(transactionID))
+	CheckError(err, "Connect() Write transaction ID")
+	_, err = amf.WriteObjectMarker(buf)
+	CheckError(err, "Connect() Write object marker")
+
+	_, err = amf.WriteObjectName(buf, "app")
+	CheckError(err, "Connect() Write app name")
+	_, err = amf.WriteString(buf, app)
+	CheckError(err, "Connect() Write app value")
+
+	_, err = amf.WriteObjectName(buf, "flashVer")
+	CheckError(err, "Connect() Write flashver name")
+	_, err = amf.WriteString(buf, "WIN 10,1,85,3")
+	CheckError(err, "Connect() Write flashver value")
+
+	_, err = amf.WriteObjectName(buf, "swfUrl")
+	CheckError(err, "Connect() Write swfUrl name")
+	_, err = amf.WriteString(buf, swfURL)
+	CheckError(err, "Connect() Write swfUrl value")
+
+	_, err = amf.WriteObjectName(buf, "tcUrl")
+	CheckError(err, "Connect() Write tcUrl name")
+	_, err = amf.WriteString(buf, tcUrl)
+	CheckError(err, "Connect() Write tcUrl value")
+
+	_, err = amf.WriteObjectName(buf, "fpad")
+	CheckError(err, "Connect() Write fpad name")
+	_, err = amf.WriteBoolean(buf, false)
+	CheckError(err, "Connect() Write fpad value")
+
+	_, err = amf.WriteObjectName(buf, "capabilities")
+	CheckError(err, "Connect() Write capabilities name")
+	_, err = amf.WriteDouble(buf, 239)
+	CheckError(err, "Connect() Write capabilities value")
+
+	_, err = amf.WriteObjectName(buf, "audioCodecs")
+	CheckError(err, "Connect() Write audioCodecs name")
+	_, err = amf.WriteDouble(buf, 3191)
+	CheckError(err, "Connect() Write audioCodecs value")
+
+	_, err = amf.WriteObjectName(buf, "videoCodecs")
+	CheckError(err, "Connect() Write videoCodecs name")
+	_, err = amf.WriteDouble(buf, 252)
+	CheckError(err, "Connect() Write videoCodecs value")
+
+	_, err = amf.WriteObjectName(buf, "videoFunction")
+	CheckError(err, "Connect() Write videoFunction name")
+	_, err = amf.WriteDouble(buf, float64(1))
+	CheckError(err, "Connect() Write videoFunction value")
+
+	_, err = amf.WriteObjectName(buf, "pageUrl")
+	CheckError(err, "Connect() Write pageUrl name")
+	_, err = amf.WriteString(buf, pageUrl)
+	CheckError(err, "Connect() Write pageUrl value")
+
+	_, err = amf.WriteObjectName(buf, "objectEncoding")
+	CheckError(err, "Connect() Write objectEncoding name")
+	_, err = amf.WriteDouble(buf, float64(amf.AMF3))
+	CheckError(err, "Connect() Write objectEncoding value")
+
+	_, err = amf.WriteObjectEndMarker(buf)
+	CheckError(err, "Connect() Write ObjectEndMarker")
+
+	// extended parameters
+
+	cmd := &Command{
+		IsFlex:        true,
+		Name:          "connect",
+		TransactionID: transactionID,
+		Objects:       make([]interface{}, 1),
+	}
+
+	err = cmd.Write(buf)
+	CheckError(err, "createStream() Create command")
+
+	connectMessage := &Message{
+		ChunkStreamID: CS_ID_COMMAND,
+		Type:          COMMAND_AMF0,
+		Size:          uint32(buf.Len()),
+		Buf:           buf,
+	}
+
+	connectMessage.Dump("connect")
+	obConn.status = OUTBOUND_CONN_STATUS_CONNECT
+	return obConn.conn.Send(connectMessage)
+}
+
 // Close a connection
 func (obConn *outboundConn) Close() {
 	for _, stream := range obConn.streams {
@@ -280,11 +495,13 @@ func (obConn *outboundConn) OnReceivedCommand(command *Command) {
 						if ok && code == RESULT_CONNECT_OK {
 							// Connect OK
 							//time.Sleep(time.Duration(200) * time.Millisecond)
+							fmt.Println(information)
+							fmt.Println("THISISWORKING")
 							obConn.conn.SetWindowAcknowledgementSize()
 							obConn.status = OUTBOUND_CONN_STATUS_CONNECT_OK
 							obConn.handler.OnStatus()
-							obConn.status = OUTBOUND_CONN_STATUS_CREATE_STREAM
-							obConn.CreateStream()
+							//obConn.status = OUTBOUND_CONN_STATUS_CREATE_STREAM
+							//obConn.CreateStream()
 						}
 					}
 				}

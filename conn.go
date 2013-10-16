@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"github.com/zhangpeihao/goamf"
 	"github.com/zhangpeihao/log"
 	"io"
@@ -145,17 +146,20 @@ func NewConn(c net.Conn, br *bufio.Reader, bw *bufio.Writer, handler ConnHandler
 	conn.outChunkStreams[CS_ID_COMMAND] = NewOutboundChunkStream(CS_ID_COMMAND)
 	// Create "User control chunk stream"
 	conn.outChunkStreams[CS_ID_USER_CONTROL] = NewOutboundChunkStream(CS_ID_USER_CONTROL)
+	fmt.Println("X*")
 	go conn.sendLoop()
 	go conn.readLoop()
+	fmt.Println("Y*")
 	return conn
 }
 
 // Send high priority message in continuous chunks
 func (conn *conn) sendMessage(message *Message) {
+	fmt.Println("SendingMessage2")
+	fmt.Println(message)
 	chunkStream, found := conn.outChunkStreams[message.ChunkStreamID]
 	if !found {
-		logger.ModulePrintf(logHandler, log.LOG_LEVEL_WARNING,
-			"Can not found chunk strem id %d", message.ChunkStreamID)
+		fmt.Println("Can not found chunk strem id %d", message.ChunkStreamID)
 		// Error
 		return
 	}
@@ -167,7 +171,8 @@ func (conn *conn) sendMessage(message *Message) {
 		conn.error(err, "sendMessage write header")
 		return
 	}
-	//	header.Dump(">>>")
+	fmt.Println(header)
+	//header.Dump(">>>")
 	if header.MessageLength > conn.outChunkSize {
 		//		chunkStream.lastHeader = nil
 		// Split into some chunk
@@ -201,12 +206,14 @@ func (conn *conn) sendMessage(message *Message) {
 			}
 		}
 	} else {
+
 		_, err = CopyNToNetwork(conn.bw, message.Buf, int64(header.MessageLength))
 		if err != nil {
 			conn.error(err, "sendMessage copy buffer")
 			return
 		}
 	}
+	fmt.Println("djfdskjhfdsfkjd")
 	err = FlushToNetwork(conn.bw)
 	if err != nil {
 		conn.error(err, "sendMessage Flush 3")
@@ -231,14 +238,20 @@ func (conn *conn) checkAndSendHighPriorityMessage() {
 // send loop
 func (conn *conn) sendLoop() {
 	defer func() {
+
 		if r := recover(); r != nil {
 			if conn.err == nil {
 				conn.err = r.(error)
+				fmt.Println(r.(error).Error())
+				fmt.Println("SENDLOOP DEAD")
 			}
 		}
+
 		conn.Close()
 	}()
+	fmt.Println("Sendloop once")
 	for !conn.closed {
+		fmt.Println("SendingLoop")
 		select {
 		case message := <-conn.highPriorityMessageQueue:
 			// Send all high priority messages
@@ -273,6 +286,7 @@ func (conn *conn) readLoop() {
 			conn.handler.OnClosed()
 		}()
 	*/
+	fmt.Println("READLOOP STARTS")
 	var found bool
 	var chunkstream *InboundChunkStream
 	var remain uint32
@@ -295,6 +309,7 @@ func (conn *conn) readLoop() {
 		}
 		var absoluteTimestamp uint32
 		var message *Message
+		fmt.Println("READLOOP SWITCH")
 		switch vfmt {
 		case HEADER_FMT_FULL:
 			chunkstream.lastHeader = header
@@ -415,8 +430,7 @@ func (conn *conn) readLoop() {
 }
 
 func (conn *conn) error(err error, desc string) {
-	logger.ModulePrintf(logHandler, log.LOG_LEVEL_TRACE,
-		"Conn %s err: %s\n", desc, err.Error())
+	fmt.Println("Conn %s err: %s\n", desc, err.Error())
 	if conn.err == nil {
 		conn.err = err
 	}
@@ -432,6 +446,7 @@ func (conn *conn) Close() {
 
 // Send a message by channel
 func (conn *conn) Send(message *Message) error {
+	fmt.Println("Send Called")
 	csiType := (message.ChunkStreamID % 6)
 	if csiType == CS_ID_PROTOCOL_CONTROL || csiType == CS_ID_COMMAND {
 		// High priority
@@ -506,7 +521,7 @@ func (conn *conn) NewTransactionID() uint32 {
 }
 
 func (conn *conn) received(message *Message) {
-	message.Dump("<<<")
+	message.Dump("<<<!")
 	tmpBuf := make([]byte, 4)
 	var err error
 	var subType byte
@@ -527,16 +542,14 @@ func (conn *conn) received(message *Message) {
 			// Sub type
 			subType, err = message.Buf.ReadByte()
 			if err != nil {
-				logger.ModulePrintln(logHandler, log.LOG_LEVEL_WARNING,
-					"conn::received() AGGREGATE_MESSAGE_TYPE read sub type err:", err)
+				fmt.Println("conn::received() AGGREGATE_MESSAGE_TYPE read sub type err:", err)
 				return
 			}
 
 			// data size
 			_, err = io.ReadAtLeast(message.Buf, tmpBuf[1:], 3)
 			if err != nil {
-				logger.ModulePrintln(logHandler, log.LOG_LEVEL_WARNING,
-					"conn::received() AGGREGATE_MESSAGE_TYPE read data size err:", err)
+				fmt.Println("conn::received() AGGREGATE_MESSAGE_TYPE read data size err:", err)
 				return
 			}
 			dataSize = binary.BigEndian.Uint32(tmpBuf)
@@ -544,8 +557,7 @@ func (conn *conn) received(message *Message) {
 			// Timestamp
 			_, err = io.ReadAtLeast(message.Buf, tmpBuf[1:], 3)
 			if err != nil {
-				logger.ModulePrintln(logHandler, log.LOG_LEVEL_WARNING,
-					"conn::received() AGGREGATE_MESSAGE_TYPE read timestamp err:", err)
+				fmt.Println("conn::received() AGGREGATE_MESSAGE_TYPE read timestamp err:", err)
 				return
 			}
 			timestamp = binary.BigEndian.Uint32(tmpBuf)
@@ -553,8 +565,7 @@ func (conn *conn) received(message *Message) {
 			// Timestamp extend
 			timestampExt, err = message.Buf.ReadByte()
 			if err != nil {
-				logger.ModulePrintln(logHandler, log.LOG_LEVEL_WARNING,
-					"conn::received() AGGREGATE_MESSAGE_TYPE read timestamp extend err:", err)
+				fmt.Println("conn::received() AGGREGATE_MESSAGE_TYPE read timestamp extend err:", err)
 				return
 			}
 			timestamp |= (uint32(timestampExt) << 24)
@@ -565,8 +576,7 @@ func (conn *conn) received(message *Message) {
 			// Ignore 3 bytes
 			_, err = io.ReadAtLeast(message.Buf, tmpBuf[1:], 3)
 			if err != nil {
-				logger.ModulePrintln(logHandler, log.LOG_LEVEL_WARNING,
-					"conn::received() AGGREGATE_MESSAGE_TYPE read ignore bytes err:", err)
+				fmt.Println("conn::received() AGGREGATE_MESSAGE_TYPE read ignore bytes err:", err)
 				return
 			}
 
@@ -577,8 +587,7 @@ func (conn *conn) received(message *Message) {
 			// Data
 			_, err = io.CopyN(subMessage.Buf, message.Buf, int64(dataSize))
 			if err != nil {
-				logger.ModulePrintln(logHandler, log.LOG_LEVEL_WARNING,
-					"conn::received() AGGREGATE_MESSAGE_TYPE copy data err:", err)
+				fmt.Println("conn::received() AGGREGATE_MESSAGE_TYPE copy data err:", err)
 				return
 			}
 
@@ -589,8 +598,7 @@ func (conn *conn) received(message *Message) {
 			if message.Buf.Len() >= 4 {
 				_, err = io.ReadAtLeast(message.Buf, tmpBuf, 4)
 				if err != nil {
-					logger.ModulePrintln(logHandler, log.LOG_LEVEL_WARNING,
-						"conn::received() AGGREGATE_MESSAGE_TYPE read previous tag size err:", err)
+					fmt.Println("conn::received() AGGREGATE_MESSAGE_TYPE read previous tag size err:", err)
 					return
 				}
 				tmpBuf[0] = 0
@@ -599,6 +607,10 @@ func (conn *conn) received(message *Message) {
 			}
 		}
 	}
+	fmt.Println("message.ChunkStreamID")
+	fmt.Println(message.ChunkStreamID)
+	fmt.Println("message.Type")
+	fmt.Println(message.Type)
 	switch message.ChunkStreamID {
 	case CS_ID_PROTOCOL_CONTROL:
 		switch message.Type {
@@ -613,6 +625,7 @@ func (conn *conn) received(message *Message) {
 		case WINDOW_ACKNOWLEDGEMENT_SIZE:
 			conn.invokeWindowAcknowledgementSize(message)
 		case SET_PEER_BANDWIDTH:
+			fmt.Println("First")
 			conn.invokeSetPeerBandwidth(message)
 		default:
 			logger.ModulePrintf(logHandler, log.LOG_LEVEL_TRACE,
@@ -629,38 +642,34 @@ func (conn *conn) received(message *Message) {
 				cmd.IsFlex = true
 				_, err = message.Buf.ReadByte()
 				if err != nil {
-					logger.ModulePrintln(logHandler, log.LOG_LEVEL_WARNING,
-						"Read first in flex commad err:", err)
+					fmt.Println("Read first in flex commad err:", err)
 					return
 				}
 				fallthrough
 			case COMMAND_AMF0:
 				cmd.Name, err = amf.ReadString(message.Buf)
 				if err != nil {
-					logger.ModulePrintln(logHandler, log.LOG_LEVEL_WARNING,
-						"AMF0 Read name err:", err)
+					fmt.Println("AMF0 Read name err:", err)
 					return
 				}
 				transactionID, err = amf.ReadDouble(message.Buf)
 				if err != nil {
-					logger.ModulePrintln(logHandler, log.LOG_LEVEL_WARNING,
-						"AMF0 Read transactionID err:", err)
+					fmt.Println("AMF0 Read transactionID err:", err)
 					return
 				}
 				cmd.TransactionID = uint32(transactionID)
 				for message.Buf.Len() > 0 {
 					object, err = amf.ReadValue(message.Buf)
 					if err != nil {
-						logger.ModulePrintln(logHandler, log.LOG_LEVEL_WARNING,
-							"AMF0 Read object err:", err)
+						fmt.Println("AMF0 Read object err:", err)
 						return
 					}
 					cmd.Objects = append(cmd.Objects, object)
 				}
 			default:
-				logger.ModulePrintf(logHandler, log.LOG_LEVEL_TRACE,
-					"Unkown message type %d in Command chunk stream!\n", message.Type)
+				fmt.Println("Unknown message type %d in Command chunk stream!\n", message.Type)
 			}
+			fmt.Println("2nd")
 			conn.invokeCommand(cmd)
 		} else {
 			conn.handler.OnReceived(message)
@@ -856,7 +865,9 @@ func (conn *conn) invokeSetPeerBandwidth(message *Message) {
 }
 
 func (conn *conn) invokeCommand(cmd *Command) {
+	fmt.Println("InvokeCommand")
 	conn.handler.OnReceivedCommand(cmd)
+	fmt.Println("InvokeCommand2")
 	logger.ModulePrintln(logHandler, log.LOG_LEVEL_TRACE,
 		"invokeCommand()")
 }

@@ -3,6 +3,7 @@
 package rtmp
 
 import (
+	"fmt"
 	"github.com/zhangpeihao/goamf"
 	"github.com/zhangpeihao/log"
 )
@@ -21,6 +22,7 @@ type Command struct {
 }
 
 func (cmd *Command) Write(w Writer) (err error) {
+	fmt.Println("COMMAND WRITE")
 	if cmd.IsFlex {
 		err = w.WriteByte(0x00)
 		if err != nil {
