@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"github.com/nu7hatch/gouuid"
 	"github.com/zhangpeihao/goamf"
 	"github.com/zhangpeihao/log"
 	"net"
@@ -36,6 +37,7 @@ type OutboundConn interface {
 	// Connect an appliction on FMS after handshake.
 	Connect(extendedParameters ...interface{}) (err error)
 	LeagueConnect(app, swfURL, tcUrl, pageUrl string) (err error)
+	LeagueConnectCommand(app, swfURL, tcUrl, pageUrl string) (err error)
 	// Create a stream
 	CreateStream() (err error)
 	// Close a connection
@@ -328,6 +330,15 @@ func (obConn *outboundConn) LeagueConnect(app, swfURL, tcUrl, pageUrl string) (e
 	_, err = amf.WriteObjectEndMarker(buf)
 	CheckError(err, "Connect() Write ObjectEndMarker")
 
+	//Write Status Settings
+	_, err = amf.WriteBoolean(buf, false)
+	CheckError(err, "Connect() Write Boolean")
+	_, err = amf.WriteString(buf, "nil")
+	CheckError(err, "Connect() Write flashver value")
+
+	_, err = amf.WriteString(buf, "")
+	CheckError(err, "Connect() Write flashver value")
+
 	// extended parameters
 
 	connectMessage := &Message{
@@ -420,28 +431,44 @@ func (obConn *outboundConn) LeagueConnectCommand(app, swfURL, tcUrl, pageUrl str
 	_, err = amf.WriteDouble(buf, float64(amf.AMF3))
 	CheckError(err, "Connect() Write objectEncoding value")
 
-	_, err = amf.WriteObjectEndMarker(buf)
-	CheckError(err, "Connect() Write ObjectEndMarker")
-
 	// extended parameters
 
 	cmd := &Command{
 		IsFlex:        true,
-		Name:          "connect",
+		Name:          "flex.messaging.messages.CommandMessage",
 		TransactionID: transactionID,
 		Objects:       make([]interface{}, 1),
+	}
+	u, err := uuid.NewV4()
+	cmd.Objects[0] = amf.Object{
+		"messageRefType": nil,
+		"operation":      5,
+		"correlationId":  "",
+		"clientId":       nil,
+		"destination":    "",
+		"messageID":      u.String(),
+		"timestamp":      float32(0),
+		"timeToLive":     float32(0),
+		"body":           amf.Object{},
+		"headers": amf.Object{
+			"DSMessagingVersion": float32(1),
+			"DSId":               "my-rtmps",
+		},
 	}
 
 	err = cmd.Write(buf)
 	CheckError(err, "createStream() Create command")
 
+	_, err = amf.WriteObjectEndMarker(buf)
+	CheckError(err, "Connect() Write ObjectEndMarker")
 	connectMessage := &Message{
 		ChunkStreamID: CS_ID_COMMAND,
 		Type:          COMMAND_AMF0,
 		Size:          uint32(buf.Len()),
 		Buf:           buf,
 	}
-
+	fmt.Println("THIS IS BUF")
+	fmt.Printf("%X\n", buf)
 	connectMessage.Dump("connect")
 	obConn.status = OUTBOUND_CONN_STATUS_CONNECT
 	return obConn.conn.Send(connectMessage)
